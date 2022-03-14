@@ -1,57 +1,92 @@
 <?php
-
 /**
- * The BuddyPress Plugin
+ * The BuddyPress Plugin.
  *
  * BuddyPress is social networking software with a twist from the creators of WordPress.
  *
  * @package BuddyPress
  * @subpackage Main
+ * @since 1.0.0
  */
 
 /**
- * Plugin Name:       BuddyPress
- * Plugin URI:        https://buddypress.org
- * Description:       BuddyPress adds community features to WordPress. Member Profiles, Activity Streams, Direct Messaging, Notifications, and more!
- * Author:            The BuddyPress Community
- * Author URI:        https://buddypress.org
- * License:           GNU General Public License v2 or later
- * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       buddypress
- * Domain Path:       /bp-languages/
- * Requires PHP:      5.6
- * Requires at least: 5.4
- * Version:           11.0.0-alpha
+ * Plugin Name: BuddyPress
+ * Plugin URI:  https://buddypress.org/
+ * Description: BuddyPress adds community features to WordPress. Member Profiles, Activity Streams, Direct Messaging, Notifications, and more!
+ * Author:      The BuddyPress Community
+ * Author URI:  https://buddypress.org/
+ * Version:     10.0.0
+ * Text Domain: buddypress
+ * Domain Path: /bp-languages/
+ * License:     GPLv2 or later (license.txt)
  */
 
-// Exit if accessed directly
+/**
+ * This files should always remain compatible with the minimum version of
+ * PHP supported by WordPress.
+ */
+
+// Exit if accessed directly.
 defined( 'ABSPATH' ) || exit;
 
-// Assume you want to load from build
-$bp_loader = dirname( __FILE__ ) . '/build/bp-loader.php';
+// Required PHP version.
+define( 'BP_REQUIRED_PHP_VERSION', '5.6.0' );
 
-// Load from source if no build exists
-if ( ! file_exists( $bp_loader ) || defined( 'BP_LOAD_SOURCE' ) ) {
-	$bp_loader = dirname( __FILE__ ) . '/src/bp-loader.php';
-	$bp_subdir = 'src';
+/**
+ * The main function responsible for returning the one true BuddyPress Instance to functions everywhere.
+ *
+ * Use this function like you would a global variable, except without needing
+ * to declare the global.
+ *
+ * Example: <?php $bp = buddypress(); ?>
+ *
+ * @return BuddyPress|null The one true BuddyPress Instance.
+ */
+function buddypress() {
+	return BuddyPress::instance();
+}
+
+/**
+ * Adds an admin notice to installations that don't meet BP's minimum PHP requirement.
+ *
+ * @since 2.8.0
+ */
+function bp_php_requirements_notice() {
+	if ( ! current_user_can( 'update_core' ) ) {
+		return;
+	}
+
+	?>
+
+	<div id="message" class="error notice is-dismissible">
+		<p><strong><?php esc_html_e( 'Your site does not support BuddyPress.', 'buddypress' ); ?></strong></p>
+		<?php /* translators: 1: current PHP version, 2: required PHP version */ ?>
+		<p><?php printf( esc_html__( 'Your site is currently running PHP version %1$s, while BuddyPress requires version %2$s or greater.', 'buddypress' ), esc_html( phpversion() ), esc_html( BP_REQUIRED_PHP_VERSION ) ); ?> <?php printf( __( 'See <a href="%s">the Codex guide</a> for more information.', 'buddypress' ), 'https://codex.buddypress.org/getting-started/buddypress-2-8-will-require-php-5-3/' ); ?></p>
+		<p><?php esc_html_e( 'Please update your server or deactivate BuddyPress.', 'buddypress' ); ?></p>
+	</div>
+
+	<?php
+}
+
+if ( version_compare( phpversion(), BP_REQUIRED_PHP_VERSION, '<' ) ) {
+	add_action( 'admin_notices', 'bp_php_requirements_notice' );
+	add_action( 'network_admin_notices', 'bp_php_requirements_notice' );
+	return;
 } else {
-	$bp_subdir = 'build';
+	require dirname( __FILE__ ) . '/class-buddypress.php';
+
+	/*
+	 * Hook BuddyPress early onto the 'plugins_loaded' action.
+	 *
+	 * This gives all other plugins the chance to load before BuddyPress,
+	 * to get their actions, filters, and overrides setup without
+	 * BuddyPress being in the way.
+	 */
+	if ( defined( 'BUDDYPRESS_LATE_LOAD' ) ) {
+		add_action( 'plugins_loaded', 'buddypress', (int) BUDDYPRESS_LATE_LOAD );
+
+	// "And now here's something we hope you'll really like!".
+	} else {
+		$GLOBALS['bp'] = buddypress();
+	}
 }
-
-// Set source subdirectory
-define( 'BP_SOURCE_SUBDIRECTORY', $bp_subdir );
-
-// Define overrides - only applicable to those running trunk
-if ( ! defined( 'BP_PLUGIN_DIR' ) ) {
-	define( 'BP_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-}
-if ( ! defined( 'BP_PLUGIN_URL' ) ) {
-	// Be nice to symlinked directories
-	define( 'BP_PLUGIN_URL', plugins_url( trailingslashit( basename( constant( 'BP_PLUGIN_DIR' ) ) ) ) );
-}
-
-// Include BuddyPress
-include( $bp_loader );
-
-// Unset vars that were invoked in global scope
-unset( $bp_loader, $bp_subdir );
