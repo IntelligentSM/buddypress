@@ -3622,7 +3622,7 @@ function bp_send_email( $email_type, $to, $args = array() ) {
 		return wp_mail(
 			array_shift( $to )->get_address(),
 			$email->get( 'subject', 'replace-tokens' ),
-			$email->get( 'content_plaintext', 'replace-tokens' )
+			$email->get_template( 'add-content' )
 		);
 	}
 
