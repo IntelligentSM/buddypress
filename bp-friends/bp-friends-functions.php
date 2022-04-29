@@ -844,6 +844,8 @@ function bp_friends_prime_mentions_results() {
 
 		$results[] = $result;
 	}
+	
+	$results = apply_filters( 'ism_filter_at_mentions', $results );
 
 	wp_localize_script( 'bp-mentions', 'BP_Suggestions', array(
 		'friends' => $results,
