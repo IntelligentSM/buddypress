@@ -2952,6 +2952,7 @@ function bp_ajax_get_suggestions() {
 	}
 
 	$results = bp_core_get_suggestions( $args );
+	$results = apply_filters( 'ism_filter_at_mentions', $results );
 
 	if ( is_wp_error( $results ) ) {
 		wp_send_json_error( $results->get_error_message() );
