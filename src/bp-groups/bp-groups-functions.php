@@ -2969,7 +2969,7 @@ function bp_groups_get_group_types( $args = array(), $output = 'names', $operato
 		$types = bp_get_taxonomy_types( bp_get_group_type_tax_name(), $types );
 	}
 
-	$types = wp_filter_object_list( $types, $args, $operator );
+	$types = array_filter( wp_filter_object_list( $types, $args, $operator ) );
 
 	/**
 	 * Filters the array of group type objects.
@@ -2983,9 +2983,9 @@ function bp_groups_get_group_types( $args = array(), $output = 'names', $operato
 	 * @param array  $args      Array of key=>value arguments for filtering.
 	 * @param string $operator  'or' to match any of $args, 'and' to require all.
 	 */
-	$types = apply_filters( 'bp_groups_get_group_types', $types, $args, $operator );
+	$types = (array) apply_filters( 'bp_groups_get_group_types', $types, $args, $operator );
 
-	if ( 'names' === $output ) {
+	if ( $types && 'names' === $output ) {
 		$types = wp_list_pluck( $types, 'name' );
 	}
 
@@ -3244,6 +3244,11 @@ function bp_groups_remove_group_type( $group_id, $group_type ) {
  */
 function bp_groups_has_group_type( $group_id, $group_type ) {
 	if ( empty( $group_type ) || ! bp_groups_get_group_type_object( $group_type ) ) {
+		return false;
+	}
+
+	$group_id = (int) $group_id;
+	if ( ! $group_id ) {
 		return false;
 	}
 
@@ -3678,3 +3683,46 @@ function bp_init_group_extensions() {
 	}
 }
 add_action( 'bp_init', 'bp_init_group_extensions', 11 );
+
+/**
+ * Updates a group members count when a user joined or left the group.
+ *
+ * @since 10.3.0
+ *
+ * @param BP_Groups_Member|int $groups_member The BP_Groups_Member object or the group member ID.
+ * @param int                  $group_id      The group's ID.
+ */
+function bp_groups_update_group_members_count( $groups_member, $group_id = 0 ) {
+	if ( $groups_member instanceof BP_Groups_Member ) {
+		$group_id = $groups_member->group_id;
+	}
+
+	BP_Groups_Member::refresh_total_member_count_for_group( (int) $group_id );
+}
+add_action( 'groups_member_after_save', 'bp_groups_update_group_members_count' );
+add_action( 'groups_member_after_remove', 'bp_groups_update_group_members_count' );
+add_action( 'bp_groups_member_after_delete', 'bp_groups_update_group_members_count', 10, 2 );
+
+/**
+ * Defers a group's counting to avoid updating it when batch adding/removing users to this group.
+ *
+ * @since 10.3.0
+ *
+ * @param bool $defer True to defer, false otherwise.
+ * @param int $group_id The group's ID.
+ */
+function bp_groups_defer_group_members_count( $defer = true, $group_id = 0 ) {
+	if ( $defer ) {
+		remove_action( 'groups_member_after_save', 'bp_groups_update_group_members_count' );
+		remove_action( 'groups_member_after_remove', 'bp_groups_update_group_members_count' );
+		remove_action( 'bp_groups_member_after_delete', 'bp_groups_update_group_members_count', 10, 2 );
+	} else {
+		add_action( 'groups_member_after_save', 'bp_groups_update_group_members_count' );
+		add_action( 'groups_member_after_remove', 'bp_groups_update_group_members_count' );
+		add_action( 'bp_groups_member_after_delete', 'bp_groups_update_group_members_count', 10, 2 );
+	}
+
+	if  ( $group_id ) {
+		bp_groups_update_group_members_count( 0, (int) $group_id );
+	}
+}

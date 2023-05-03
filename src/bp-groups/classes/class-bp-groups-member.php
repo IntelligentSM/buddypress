@@ -281,7 +281,7 @@ class BP_Groups_Member {
 		 *
 		 * @since 1.0.0
 		 *
-		 * @param BP_Groups_Member $this Current instance of the group membership item being saved. Passed by reference.
+		 * @param BP_Groups_Member $group_membership Current instance of the group membership item being saved. Passed by reference.
 		 */
 		do_action_ref_array( 'groups_member_before_save', array( &$this ) );
 
@@ -309,9 +309,6 @@ class BP_Groups_Member {
 		// Update the user's group count.
 		self::refresh_total_group_count_for_user( $this->user_id );
 
-		// Update the group's member count.
-		self::refresh_total_member_count_for_group( $this->group_id );
-
 		/**
 		 * Fires after the current group membership item has been saved.
 		 *
@@ -319,7 +316,7 @@ class BP_Groups_Member {
 		 *
 		 * @since 1.0.0
 		 *
-		 * @param BP_Groups_Member $this Current instance of the group membership item has been saved. Passed by reference.
+		 * @param BP_Groups_Member $member Current instance of the group membership item has been saved. Passed by reference.
 		 */
 		do_action_ref_array( 'groups_member_after_save', array( &$this ) );
 
@@ -434,7 +431,7 @@ class BP_Groups_Member {
 		 *
 		 * @since 2.3.0
 		 *
-		 * @param BP_Groups_Member $this Current group membership object.
+		 * @param BP_Groups_Member $group_membership Current group membership class.
 		 */
 		do_action_ref_array( 'groups_member_before_remove', array( $this ) );
 
@@ -447,15 +444,12 @@ class BP_Groups_Member {
 		// Update the user's group count.
 		self::refresh_total_group_count_for_user( $this->user_id );
 
-		// Update the group's member count.
-		self::refresh_total_member_count_for_group( $this->group_id );
-
 		/**
 		 * Fires after a member is removed from a group.
 		 *
 		 * @since 2.3.0
 		 *
-		 * @param BP_Groups_Member $this Current group membership object.
+		 * @param BP_Groups_Member $member Current group membership object.
 		 */
 		do_action_ref_array( 'groups_member_after_remove', array( $this ) );
 
@@ -516,9 +510,6 @@ class BP_Groups_Member {
 
 		// Update the user's group count.
 		self::refresh_total_group_count_for_user( $user_id );
-
-		// Update the group's member count.
-		self::refresh_total_member_count_for_group( $group_id );
 
 		/**
 		 * Fires after a member is removed from a group.

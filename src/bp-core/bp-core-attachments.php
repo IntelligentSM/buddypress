@@ -156,6 +156,7 @@ function bp_attachments_get_max_upload_file_size( $type = '' ) {
  * Get allowed types for any attachment.
  *
  * @since 2.4.0
+ * @since 11.0.0 Adds the support for .webp images to Avatars and Cover images.
  *
  * @param string $type The extension types to get.
  *                     Default: 'avatar'.
@@ -163,16 +164,16 @@ function bp_attachments_get_max_upload_file_size( $type = '' ) {
  */
 function bp_attachments_get_allowed_types( $type = 'avatar' ) {
 	// Defaults to BuddyPress supported image extensions.
-	$exts    = array( 'jpeg', 'gif', 'png' );
-	$wp_exts = wp_get_ext_types();
+	$exts = array( 'jpg', 'jpeg', 'jpe', 'gif', 'png' );
+	if ( bp_is_running_wp( '5.8.0', '>=' ) ) {
+		$exts[] = 'webp';
+	}
 
-	/**
-	 * It's not a BuddyPress feature, get the allowed extensions
-	 * matching the $type requested.
-	 */
-	if ( 'avatar' !== $type && 'cover_image' !== $type ) {
+	// Avatar and cover image are images.
+	if ( 'image' !== $type && 'avatar' !== $type && 'cover_image' !== $type ) {
 		// Reset the default exts.
-		$exts = array();
+		$exts    = array();
+		$wp_exts = wp_get_ext_types();
 
 		if ( 'video' === $type ) {
 			$exts = wp_get_video_extensions();
@@ -689,6 +690,7 @@ function bp_attachments_get_plupload_l10n() {
 			'dismiss'                   => __( 'Dismiss', 'buddypress' ),
 			'crunching'                 => __( 'Crunching&hellip;', 'buddypress' ),
 			'unique_file_warning'       => __( 'Make sure to upload a unique file', 'buddypress' ),
+			'noneditable_image'         => __( 'This image cannot be processed by the web server. Convert it to JPEG or PNG before uploading.', 'buddypress' ),
 
 			/* translators: %s: File name. */
 			'error_uploading'           => __( '&#8220;%s&#8221; has failed to upload.', 'buddypress' ),
@@ -777,6 +779,15 @@ function bp_attachments_enqueue_scripts( $class = '' ) {
 
 	if ( ! empty( $args['max_file_size'] ) ) {
 		$defaults['filters']['max_file_size'] = $args['max_file_size'] . 'b';
+	}
+
+	if ( isset( $args['mime_types'] ) && $args['mime_types'] ) {
+		$defaults['filters']['mime_types'] =  array( array( 'extensions' => $args['mime_types'] ) );
+	}
+
+	// Check if WebP images can be edited.
+	if ( bp_is_running_wp( '5.8.0', '>=' ) && ! wp_image_editor_supports( array( 'mime_type' => 'image/webp' ) ) ) {
+		$defaults['webp_upload_error'] = true;
 	}
 
 	// Specific to BuddyPress Avatars.
@@ -1639,6 +1650,58 @@ function bp_attachments_cover_image_ajax_delete() {
 add_action( 'wp_ajax_bp_cover_image_delete', 'bp_attachments_cover_image_ajax_delete' );
 
 /**
+ * Returns a file's mime type.
+ *
+ * @since 11.0.0
+ *
+ * @param string $file Absolute path of a file or directory.
+ * @return false|string False if the mime type is not supported by WordPress.
+ *                      The mime type of a file or 'directory' for a directory.
+ */
+function bp_attachments_get_mime_type( $file = '' ) {
+	$file_type = wp_check_filetype( $file, wp_get_mime_types() );
+	$file_mime = $file_type['type'];
+
+	if ( false === $file_mime && is_dir( $file ) ) {
+		$file_mime = 'directory';
+	}
+
+	return $file_mime;
+}
+
+/**
+ * Returns a BP Attachments file object.
+ *
+ * @since 10.2.0
+ *
+ * @param SplFileInfo $file The SplFileInfo file object.
+ * @return null|object      Null if the file is not supported by WordPress.
+ *                          A BP Attachments file object otherwise.
+ */
+function bp_attachments_get_file_object( SplFileInfo $file ) {
+	$path      = $file->getPathname();
+	$mime_type = bp_attachments_get_mime_type( $path );
+
+	// Mime type not supported by WordPress.
+	if ( false === $mime_type ) {
+		return null;
+	}
+
+	$_file = new stdClass();
+
+	$_file->name               = $file->getfilename();
+	$_file->path               = $path;
+	$_file->size               = $file->getSize();
+	$_file->type               = $file->getType();
+	$_file->mime_type          = bp_attachments_get_mime_type( $_file->path );
+	$_file->last_modified      = $file->getMTime();
+	$_file->latest_access_date = $file->getATime();
+	$_file->id                 = pathinfo( $_file->name, PATHINFO_FILENAME );
+
+	return $_file;
+}
+
+/**
  * List the files of a directory.
  *
  * @since 10.0.0
@@ -1655,17 +1718,13 @@ function bp_attachments_list_directory_files( $directory_path = '' ) {
 	$iterator = new FilesystemIterator( $directory_path, FilesystemIterator::SKIP_DOTS );
 
 	foreach ( $iterator as $file ) {
-		$_file = new stdClass();
+		$supported_file = bp_attachments_get_file_object( $file );
 
-		$_file->name               = $file->getfilename();
-		$_file->path               = $file->getPathname();
-		$_file->size               = $file->getSize();
-		$_file->type               = $file->getType();
-		$_file->mime_type          = mime_content_type( $_file->path );
-		$_file->last_modified      = $file->getMTime();
-		$_file->latest_access_date = $file->getATime();
-		$_file->id                 = pathinfo( $_file->name, PATHINFO_FILENAME );
-		$files[ $_file->id ]       = $_file;
+		if ( is_null( $supported_file) ) {
+			continue;
+		}
+
+		$files[ $supported_file->id ] = $supported_file;
 	}
 
 	return $files;
@@ -1692,30 +1751,26 @@ function bp_attachments_list_directory_files_recursively( $directory_path = '', 
 	$basedir   = str_replace( '\\', '/', $bp_upload['basedir'] );
 
 	foreach ( $iterator as $file ) {
-		$_file = new stdClass();
+		$supported_file = bp_attachments_get_file_object( $file );
 
-		$_file->name               = $file->getfilename();
-		$_file->path               = $file->getPathname();
-		$_file->size               = $file->getSize();
-		$_file->type               = $file->getType();
-		$_file->mime_type          = mime_content_type( $_file->path );
-		$_file->last_modified      = $file->getMTime();
-		$_file->latest_access_date = $file->getATime();
-		$_file->parent_dir_path    = str_replace( '\\', '/', dirname( $_file->path ) );
-		$_file->parent_dir_url     = str_replace( $basedir, $bp_upload['baseurl'], $_file->parent_dir_path );
-		$_file->id                 = pathinfo( $_file->name, PATHINFO_FILENAME );
+		if ( is_null( $supported_file) ) {
+			continue;
+		}
+
+		$supported_file->parent_dir_path = str_replace( '\\', '/', dirname( $supported_file->path ) );
+		$supported_file->parent_dir_url  = str_replace( $basedir, $bp_upload['baseurl'], $supported_file->parent_dir_path );
 
 		// Ensure URL is https if SSL is set/forced.
 		if ( is_ssl() ) {
-			$_file->parent_dir_url = str_replace( 'http://', 'https://', $_file->parent_dir_url );
+			$supported_file->parent_dir_url = str_replace( 'http://', 'https://', $supported_file->parent_dir_url );
 		}
 
-		$file_id = $_file->id;
-		if ( $_file->parent_dir_path !== $directory_path ) {
-			$file_id = trailingslashit( str_replace( trailingslashit( $directory_path ), '', $_file->parent_dir_path ) ) . $file_id;
+		$file_id = $supported_file->id;
+		if ( $supported_file->parent_dir_path !== $directory_path ) {
+			$file_id = trailingslashit( str_replace( trailingslashit( $directory_path ), '', $supported_file->parent_dir_path ) ) . $file_id;
 		}
 
-		$files[ $file_id ] = $_file;
+		$files[ $file_id ] = $supported_file;
 	}
 
 	if ( $find ) {

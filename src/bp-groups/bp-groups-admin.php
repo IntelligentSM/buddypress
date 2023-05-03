@@ -354,6 +354,11 @@ function bp_groups_admin_load() {
 		}
 
 		if ( ! empty( $user_names ) ) {
+			$new_members = count( $user_names );
+
+			if ( 1 < $new_members ) {
+				bp_groups_defer_group_members_count( true );
+			}
 
 			foreach( array_values( $user_names ) as $user_name ) {
 				$un = trim( $user_name );
@@ -371,6 +376,10 @@ function bp_groups_admin_load() {
 						$success_new[] = $un;
 					}
 				}
+			}
+
+			if ( 1 < $new_members ) {
+				bp_groups_defer_group_members_count( false, $group_id );
 			}
 		}
 
@@ -637,7 +646,7 @@ function bp_groups_admin_edit() {
 	 *
 	 * @since 1.7.0
 	 *
-	 * @param BP_Groups_Group $this Instance of the current group being edited. Passed by reference.
+	 * @param BP_Groups_Group $group Instance of the current group being edited. Passed by reference.
 	 */
 	do_action_ref_array( 'bp_groups_admin_edit', array( &$group ) ); ?>
 

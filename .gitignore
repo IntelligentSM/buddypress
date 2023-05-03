@@ -1,5 +1,6 @@
 .DS_Store
 phpunit.xml
+.phpunit*
 .idea
 .cache
 
@@ -15,9 +16,10 @@ lib-cov
 pids
 logs
 results
-src/vendor
 
 npm-debug.log
+
+.phpcs/*.json
 
 # The build directory.
 build

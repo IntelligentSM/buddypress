@@ -5,6 +5,8 @@
  */
 
 class BP_Tests_Core_Functions extends BP_UnitTestCase {
+	protected $bp_initial_version;
+
 	/**
 	 * @group bp_esc_sql_order
 	 */
@@ -782,7 +784,10 @@ class BP_Tests_Core_Functions extends BP_UnitTestCase {
 	 * @group bp_attachments
 	 */
 	public function test_bp_attachments_get_allowed_types() {
-		$supported = array( 'jpeg', 'gif', 'png' );
+		$supported = array( 'jpg', 'jpeg', 'jpe', 'gif', 'png' );
+		if ( bp_is_running_wp( '5.8.0', '>=' ) ) {
+			$supported[] = 'webp';
+		}
 
 		$avatar = bp_attachments_get_allowed_types( 'avatar' );
 		$this->assertSame( $supported, $avatar );
@@ -807,12 +812,12 @@ class BP_Tests_Core_Functions extends BP_UnitTestCase {
 		$content    = '<a href="http://example.com">example</a>';
 		$link_color = 'style="color: ' . esc_attr( $appearance['highlight_color'] ) . ';';
 		$result     = bp_email_add_link_color_to_template( $content, 'template', 'add-content' );
-		$this->assertContains( $link_color, $result );
+		$this->assertStringContainsString( $link_color, $result );
 
 		$content     = '<a href="http://example.com" style="display: block">example</a>';
 		$link_color .= 'display: block';
 		$result      = bp_email_add_link_color_to_template( $content, 'template', 'add-content' );
-		$this->assertContains( $link_color, $result );
+		$this->assertStringContainsString( $link_color, $result );
 	}
 
 	/**
@@ -874,5 +879,106 @@ class BP_Tests_Core_Functions extends BP_UnitTestCase {
 
 	public function add_newcomponent_page_title( $page_default_titles = array() ) {
 		return array_merge( $page_default_titles, array( 'newcomponent' => 'NewComponent' ) );
+	}
+
+	public function override_initial_version() {
+		return $this->bp_initial_version;
+	}
+
+	/**
+	 * @ticket BP8687
+	 */
+	public function test_bp_get_deprecated_functions_versions() {
+		$current_version = (float) bp_get_version();
+		$versions        = bp_get_deprecated_functions_versions();
+
+		// When current version is the initial version, we shouldn't load deprecated functions files.
+		$this->assertTrue( is_array( $versions ) && ! $versions, 'Please check the list of `$deprecated_functions_versions` in `bp_get_deprecated_functions_versions()`. There should be one for each file of the `/src/bp-core/deprecated` directory.' );
+
+		// We should load the 2 lasts deprecated functions files.
+		$this->bp_initial_version = '8.0';
+
+		add_filter( 'pre_option__bp_initial_major_version', array( $this, 'override_initial_version' ), 10, 0 );
+
+		$versions = bp_get_deprecated_functions_versions();
+
+		remove_filter( 'pre_option__bp_initial_major_version', array( $this, 'override_initial_version' ), 10, 0 );
+
+		$this->assertTrue( 2 === count( $versions ) );
+
+		// Even if this version does not exist in deprecated functions files, we should load the 2 lasts.
+		$this->bp_initial_version = '1.0';
+
+		add_filter( 'pre_option__bp_initial_major_version', array( $this, 'override_initial_version' ), 10, 0 );
+
+		$versions = bp_get_deprecated_functions_versions();
+
+		remove_filter( 'pre_option__bp_initial_major_version', array( $this, 'override_initial_version' ), 10, 0 );
+
+		$this->assertTrue( 2 === count( $versions ) );
+	}
+
+	/**
+	 * Override the comment max links option.
+	 */
+	public function override_comment_max_links() {
+		return 2;
+	}
+
+	/**
+	 * @ticket BP8765
+	 */
+	public function test_bp_core_check_for_moderation() {
+		$u = self::factory()->user->create();
+		//<a href="%1$s">Hello</a>
+		$content = sprintf(
+			'<!-- wp:paragraph -->
+			<p><strong>%1$s %2$s!</p>
+			<!-- /wp:paragraph -->',
+			'Hello',
+			'World'
+		);
+
+		add_filter( 'pre_option_comment_max_links', array( $this, 'override_comment_max_links' ), 10, 0 );
+
+		$test = bp_core_check_for_moderation( $u, '', $content );
+		$this->assertTrue( $test );
+
+		$content = sprintf(
+			'<!-- wp:paragraph -->
+			<p><strong>%1$s %2$s!</p>
+			<!-- /wp:paragraph -->',
+			'Hello',
+			'<a href="https://foo.bar">World</a>'
+		);
+
+		$test = bp_core_check_for_moderation( $u, '', $content );
+		$this->assertTrue( $test );
+
+		$content = sprintf(
+			'<!-- wp:paragraph -->
+			<p><strong>%1$s %2$s!</p>
+			<!-- /wp:paragraph -->',
+			'<a href="https://bar.foo">Hello</a>',
+			'<a href="https://foo.bar">World</a>'
+		);
+
+		$test = bp_core_check_for_moderation( $u, '', $content );
+		$this->assertFalse( $test );
+
+		$content = sprintf(
+			'<!-- wp:paragraph -->
+			<p><strong>%1$s %2$s !</p>
+			<!-- /wp:paragraph -->
+			<!-- wp:bp/image-attachment {"align":"center","url":"%3$s/bp-attachments/public/members/admin/view/635168b2e5aae34973bcb0c1f0bd86fd/","src":"%3$s/wp-content/uploads/buddypress/public/members/1/bp-6-0-0-slated.jpg"} /-->',
+			'Hello',
+			'World',
+			home_url()
+		);
+
+		$test = bp_core_check_for_moderation( $u, '', $content );
+		$this->assertTrue( $test );
+
+		remove_filter( 'pre_option_comment_max_links', array( $this, 'override_comment_max_links' ), 10, 0 );
 	}
 }
